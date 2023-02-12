@@ -23,15 +23,12 @@ MASTODON_ACCESS_TOKEN=...
 
 ### Dependencies
 
-To bundle up dependencies, run:
+To deploy this app, run:
 
 ```bash
-pip install -t lambda_function -r requirements.txt
+sh deploy.sh
 ```
-
-To bundle up the code, add the main.py file to the lambda_function directory. Zip this
-directory and upload it to AWS Lambda.
 
 ## main.py
 
-This script fetches a card from a Pokemon API and posts it.
+This script fetches a card from a Pokémon API and posts it.
