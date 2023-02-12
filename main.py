@@ -2,19 +2,11 @@ import os
 import random
 
 import requests
-import tweepy
 from mastodon import Mastodon
 
 
-def lambda_handler(event, context):
-    consumer_key = os.environ.get('TWITTER_CONSUMER_KEY')
-    consumer_secret = os.environ.get('TWITTER_CONSUMER_SECRET')
-    auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
-    access_token = os.environ.get('TWITTER_ACCESS_TOKEN')
-    access_token_secret = os.environ.get('TWITTER_ACCESS_TOKEN_SECRET')
-    auth.set_access_token(access_token, access_token_secret)
-    api = tweepy.API(auth, wait_on_rate_limit=True)
 
+def lambda_handler(event, context):
     mastodon = Mastodon(
         api_base_url='https://mastodon.social',
         client_id=os.environ.get('MASTODON_CLIENT_KEY'),
@@ -22,47 +14,74 @@ def lambda_handler(event, context):
         access_token=os.environ.get('MASTODON_ACCESS_TOKEN'),
     )
 
+    # random number between 1 and total number of Pokémon
+    page = random.randint(1, 1008)
+
     response = requests.get(
-        'https://api.pokemontcg.io/v2/cards?page=1&pageSize=1')
-    json = response.json()
-    total_count = json['totalCount']
+        'https://pokeapi.co/api/v2/pokemon/%s' % page)
+    pokemon = response.json()
 
-    # get a random number between 1 and total_count
-    random_number = random.randint(1, total_count)
-
-    # query pokemontcg API for a random card
-    # example query: https://api.pokemontcg.io/v2/cards?page=12022&pageSize=1
     response = requests.get(
-        'https://api.pokemontcg.io/v2/cards?page=%s&pageSize=1' % random_number)
-    json = response.json()
+        'https://pokeapi.co/api/v2/pokemon-species/%s' % page)
+    species = response.json()
 
-    image = json["data"][0]["images"]["large"]
-    name = json["data"][0]["name"]
-    tcgSet = json["data"][0]["set"]["name"]
-    releaseDate = json["data"][0]["set"]["releaseDate"]
-    artist = json["data"][0]["artist"]
+    sprites = []
+
+    def find_sprites(d):
+        for k, v in d.items():
+            if isinstance(v, dict):
+                find_sprites(v)
+            elif isinstance(v, str):
+                sprites.append(v)
+
+    find_sprites(pokemon["sprites"])
+    sprite = random.choice(sprites)
+
+    # filter only english flavor text
+    entries = species["flavor_text_entries"] = list(
+        filter(lambda x: x["language"]["name"] == "en", species["flavor_text_entries"]))
+
+    entry = ""
+
+    # check if there are entries
+    if len(entries) == 0:
+        print("No entries")
+    else:
+        # get random flavor text
+        flavor_text = random.choice(entries)
+        entry = flavor_text["flavor_text"].replace("\n", " ")
+
+    # get english name in list of names
+    name = list(filter(lambda x: x["language"]["name"] == "en", species["names"]))[0]["name"]
+
+    print(name)
+    print(entry)
+    print(sprite)
+
+    # create new 500x500px image and center the sprite
 
     filename = "/tmp/temp.png"
-    request = requests.get(image, stream=True)
+    request = requests.get(sprite, stream=True)
     if request.status_code == 200:
         with open(filename, 'wb') as image:
             for chunk in request:
                 image.write(chunk)
 
-        alt_text = "%s (%s) released %s. Illustrated by %s." % (
-            name, tcgSet, releaseDate, artist)
+        alt_text = "#%s: %s" % (
+            page, name)
 
-        twitter_media_response = api.media_upload(filename=filename)
-        api.create_media_metadata(
-            twitter_media_response.media_id, alt_text=alt_text)
-        if twitter_media_response.media_id:
-            api.update_status(status=name, media_ids=[
-                twitter_media_response.media_id])
+        status = ""
+        if entry != "":
+            status = "#%s %s: %s" % (
+                page, name, entry)
+        else:
+            status = "#%s %s" % (
+                page, name)
 
         mastodon_media_response = mastodon.media_post(
             filename, description=alt_text)
         if mastodon_media_response.id:
-            mastodon.status_post(status=name, media_ids=[
+            mastodon.status_post(status=status, media_ids=[
                 mastodon_media_response.id])
 
         os.remove(filename)
@@ -71,4 +90,4 @@ def lambda_handler(event, context):
 
 
 # Uncomment to run locally:
-# lambda_handler(None, None)
+lambda_handler(None, None)
