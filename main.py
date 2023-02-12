@@ -1,12 +1,12 @@
 import os
 import random
+from time import sleep
 
 import requests
 from mastodon import Mastodon
 
 
-
-def lambda_handler(event, context):
+def main():
     mastodon = Mastodon(
         api_base_url='https://mastodon.social',
         client_id=os.environ.get('MASTODON_CLIENT_KEY'),
@@ -14,8 +14,13 @@ def lambda_handler(event, context):
         access_token=os.environ.get('MASTODON_ACCESS_TOKEN'),
     )
 
+    # get total number of Pokémon
+    response = requests.get(
+        'https://pokeapi.co/api/v2/pokemon-species/?limit=1')
+    total = response.json()["count"]
+
     # random number between 1 and total number of Pokémon
-    page = random.randint(1, 1008)
+    page = random.randint(1, total)
 
     response = requests.get(
         'https://pokeapi.co/api/v2/pokemon/%s' % page)
@@ -54,12 +59,6 @@ def lambda_handler(event, context):
     # get english name in list of names
     name = list(filter(lambda x: x["language"]["name"] == "en", species["names"]))[0]["name"]
 
-    print(name)
-    print(entry)
-    print(sprite)
-
-    # create new 500x500px image and center the sprite
-
     filename = "/tmp/temp.png"
     request = requests.get(sprite, stream=True)
     if request.status_code == 200:
@@ -78,8 +77,14 @@ def lambda_handler(event, context):
             status = "#%s %s" % (
                 page, name)
 
+        print(status)
+        print(sprite)
+
         mastodon_media_response = mastodon.media_post(
             filename, description=alt_text)
+
+        sleep(3)
+
         if mastodon_media_response.id:
             mastodon.status_post(status=status, media_ids=[
                 mastodon_media_response.id])
@@ -89,5 +94,5 @@ def lambda_handler(event, context):
         print("Unable to download image")
 
 
-# Uncomment to run locally:
-lambda_handler(None, None)
+if __name__ == "__main__":
+    main()
